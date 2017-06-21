@@ -1,14 +1,13 @@
-#include <ESP8266WiFi.h>
+#include <String.h>
+#include <ArduinoJson.h>
 
 #include <DNSServer.h>
-#include <ESP8266WebServer.h>
-#include <WiFiManager.h>
 #include <WiFiClient.h>
+#include <WiFiManager.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
-#include <ArduinoJson.h>
-#include <String.h>
 
-#define MAX_PLUG_COUNT 10
 
 void setup() {
     Serial.begin(115200);
@@ -49,78 +48,96 @@ void setup() {
     String get_data;
     while(get_client.available()){
       get_data = get_client.readStringUntil('\r');
-      Serial.println(get_data);
     }
 
     // Keep sufficient memory, this is what was hindering the distance before.
     StaticJsonBuffer<1024> jsonBuffer;
     JsonObject& plug_data = jsonBuffer.parseObject(get_data);
-    Serial.println(plug_data.containsKey("plugs"));
 
     int chip_id = ESP.getChipId();
-    Serial.println("This is the chip id");
-    Serial.println(chip_id);
-    Serial.println("ChipId has been printed above");
     bool id_present = false;
+    bool plugs_present = false;
     if (plug_data.containsKey("plugs"))
     {
-      Serial.println("Found object2 !");
-      
-      JsonArray& plugs =  plug_data["plugs"];
+      plugs_present = true;
+      JsonArray& plugs = plug_data["plugs"];
       int arraySize = plug_data["plugs"].size();
+      Serial.println("Plugs is present");
 
-      for (int i = 0; i< arraySize; i++){
+      for (int i = 0; i< arraySize; i++) {
         int sensorValue=plug_data["plugs"][i]["plug_id"];
-        Serial.println(sensorValue);
+        if(chip_id == sensorValue) {
+          Serial.println("Chip is present, no need to add it.");
+          id_present = true;
+        }
       }
     }
     else
     {
-      Serial.println("Found nothing");
+      Serial.println("Plugs dict does not exist..");
+    }
+
+    if(!plugs_present)
+    {
+      // We now create a URI for the request
+      String url = "/smartplug";
+      Serial.print("Requesting URL: ");
+      Serial.println(url);
+      StaticJsonBuffer<200> jsonBuffer;
+      JsonObject& user_data = jsonBuffer.createObject();
+      user_data["_id"] = email->getValue();
+      user_data["name"] = plug_name->getValue();
+      JsonArray& add_plugs = user_data.createNestedArray("plugs");
+      JsonObject &plug = jsonBuffer.createObject();
+      plug["plug_id"] = ESP.getChipId();
+      plug["status"] = "off";
+      add_plugs.add(plug);
+
+      String sysdata;
+      user_data.printTo(sysdata);
+      int content_length = sysdata.length();
+      get_client.println("POST /smartplug HTTP/1.1");
+      get_client.println("Host: harshcs1996.cloudant.com");
+      get_client.println("Authorization: Basic aGFyc2hjczE5OTY6SGFyc2gxOTk2IQ==");
+      get_client.print("Accept: *");
+      get_client.print("/");
+      get_client.println("*");
+      get_client.print("Content-Length:");
+      get_client.println(content_length);
+      get_client.println("Content-Type: application/json");
+      get_client.println("");
+      get_client.println(sysdata);
+    }
+
+    if(plugs_present && !id_present)
+    {
+      JsonArray& plugs = plug_data["plugs"];
+      JsonObject &new_plug = jsonBuffer.createObject();
+      new_plug["plug_id"] = ESP.getChipId();
+      new_plug["status"] = "off";
+      plugs.add(new_plug);
+      String sysdata;
+      plug_data.printTo(sysdata);
+      int content_length = sysdata.length();
+
+      get_client.print("PUT /smartplug/");
+      get_client.print("harshcs.1996@gmail.com");
+      //client.print(email->getValue());
+      get_client.println(" HTTP/1.1");
+      get_client.println("Host: harshcs1996.cloudant.com");
+      get_client.println("Authorization: Basic aGFyc2hjczE5OTY6SGFyc2gxOTk2IQ==");
+      get_client.print("Accept: *");
+      get_client.print("/");
+      get_client.println("*");
+      get_client.print("Content-Length:");
+      get_client.println(content_length);
+      get_client.println("Content-Type: application/json");
+      get_client.println("");
+      get_client.println(sysdata);
     }
 
     Serial.println();
     Serial.println("Closing get request");
-//    
-//    // We now create a URI for the request
-//    String url = "/smartplug";
-//    Serial.print("Requesting URL: ");
-//    Serial.println(url);
-//    StaticJsonBuffer<200> jsonBuffer;
-//    JsonObject& data = jsonBuffer.createObject();
-//    data["_id"] = email->getValue();
-//    data["name"] = plug_name->getValue();
-//    JsonArray& plugs = data.createNestedArray("plugs");
-//    JsonObject &plug = jsonBuffer.createObject();
-//    plug["plug_id"] = ESP.getChipId();
-//    plug["status"] = "off";
-//    plugs.add(plug);
-//
-//    String sysdata;
-//    data.printTo(sysdata);
-//    int content_length = sysdata.length();
-//    client.println("POST /smartplug HTTP/1.1");
-//    client.println("Host: harshcs1996.cloudant.com");
-//    client.println("Authorization: Basic aGFyc2hjczE5OTY6SGFyc2gxOTk2IQ==");
-//    client.print("Accept: *");
-//    client.print("/");
-//    client.println("*");
-//    client.print("Content-Length:");
-//    client.println(content_length);
-//    client.println("Content-Type: application/json");
-//    client.println("");
-//    client.println(sysdata);
-//
-//
-//    Serial.println(user_there);
-//    if(!user_there) {
-//      // Then make new doc, make use of POST client
-//      Serial.println("A new doc needs to be made.");
-//    } else {
-//      // Then check if the plug with the same id is there, if yes. then do nothing
-//      // otherwise append, it to the plugs list as a new plug with status off.
-//      Serial.println("These strings are the same. No new entry to be made.");
-//    }
 }
 
 WiFiClient create_client() {
@@ -147,6 +164,47 @@ void get_request(WiFiClient client, WiFiManagerParameter* email) {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
+  WiFiClient get_client;
+    get_client = create_client();
+    if (!get_client) {
+      return;
+    }
+  client.print(String("GET ") + path + " HTTP/1.1\r\n" +               "Host: " + host + "\r\n" +                "Connection: keep-alive\r\n\r\n");
+  delay(500); // wait for server to respond
+  // read response  
+  String section="header";
+  while(client.available()){
+    String line = client.readStringUntil('\r');
+    // Serial.print(line);    // we’ll parse the HTML body here
+    if (section=="header") { // headers..
+      Serial.print(".");
+      if (line=="\n") { // skips the empty space at the beginning
+        section="json";
+      }
+   }
+   else if (section=="json") {  // print the good stuff
+    section="ignore";
+    String result = line.substring(1);      // Parse JSON
+    int size = result.length() + 1;
+    char json[size];
+    result.toCharArray(json, size);
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json_parsed = jsonBuffer.parseObject(json);
+    if (!json_parsed.success())
+    {
+      Serial.println("parseObject() failed");
+      return;
+    }
+    // Make the decision to turn off or on the LED
+    if (strcmp(json_parsed["light"], "on") == 0) {
+      digitalWrite(pin, HIGH);
+       Serial.println("LED ON");
+    }
+    else {
+      digitalWrite(pin, LOW);
+      Serial.println("led off");
+    }
+  }
+}
+Serial.print("closing connection. ");
 }
