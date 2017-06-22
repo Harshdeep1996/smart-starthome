@@ -8,6 +8,8 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 
+int pin = 13;
+
 
 void setup() {
     Serial.begin(115200);
@@ -22,7 +24,7 @@ void setup() {
     wifiManager.addParameter(email);
     // Creates an Access Point
     wifiManager.autoConnect("Connect_Smart_Plug");
-    
+
     Serial.printf("SSID: %s\n", WiFi.SSID().c_str());
     Serial.printf("Name of plug: %s\n", plug_name->getValue());
     Serial.printf("Email of user: %s\n", email->getValue());
@@ -156,7 +158,7 @@ WiFiClient create_client() {
 void get_request(WiFiClient client, WiFiManagerParameter* email) {
   client.print("GET /smartplug/");
   client.print("harshcs.1996@gmail.com");
-//  client.print(email->getValue());
+  //  client.print(email->getValue());
   client.println(" HTTP/1.1");
   client.println("Host: harshcs1996.cloudant.com");
   client.println("Authorization: Basic aGFyc2hjczE5OTY6SGFyc2gxOTk2IQ==");
@@ -164,47 +166,48 @@ void get_request(WiFiClient client, WiFiManagerParameter* email) {
 }
 
 void loop() {
-  WiFiClient get_client;
+    WiFiClient get_client;
     get_client = create_client();
     if (!get_client) {
       return;
     }
-  client.print(String("GET ") + path + " HTTP/1.1\r\n" +               "Host: " + host + "\r\n" +                "Connection: keep-alive\r\n\r\n");
-  delay(500); // wait for server to respond
-  // read response  
-  String section="header";
-  while(client.available()){
-    String line = client.readStringUntil('\r');
-    // Serial.print(line);    // we’ll parse the HTML body here
-    if (section=="header") { // headers..
-      Serial.print(".");
-      if (line=="\n") { // skips the empty space at the beginning
-        section="json";
-      }
-   }
-   else if (section=="json") {  // print the good stuff
-    section="ignore";
-    String result = line.substring(1);      // Parse JSON
-    int size = result.length() + 1;
-    char json[size];
-    result.toCharArray(json, size);
-    StaticJsonBuffer<200> jsonBuffer;
-    JsonObject& json_parsed = jsonBuffer.parseObject(json);
-    if (!json_parsed.success())
-    {
-      Serial.println("parseObject() failed");
-      return;
+    get_client.print("GET /smartplug/");
+    get_client.print("harshcs.1996@gmail.com");
+    //  client.print(email->getValue());
+    get_client.println(" HTTP/1.1");
+    get_client.println("Host: harshcs1996.cloudant.com");
+    get_client.println("Connection: keep-alive");
+    get_client.println("Authorization: Basic aGFyc2hjczE5OTY6SGFyc2gxOTk2IQ==");
+    get_client.println("");
+    // wait for server to respond
+    delay(500);
+    // read response
+    String section = "json";
+    while(get_client.available()) {
+      String user_data = get_client.readStringUntil('\r');
+        StaticJsonBuffer<200> jsonBuffer;
+        JsonObject& json_parsed = jsonBuffer.parseObject(user_data);
+        if (!json_parsed.success())
+        {
+          Serial.println("parseObject() failed");
+          return;
+        }
+        // Make the decision to turn off or on the switch
+        int chipId = ESP.getChipId();
+        JsonArray& plugs = user_data["plugs"];
+        int plug_size = user_data["plugs"].size();
+        for(int i = 0; i < plug_size; i++) {
+          if(chipId == plugs[i]["plug_id"]) {
+            if (strcmp(plugs[i]["status"], "on")) {
+              digitalWrite(pin, HIGH);
+              Serial.println("Switch on!");
+            }
+            else {
+              digitalWrite(pin, LOW);
+              Serial.println("Switch is off!");
+            }
+          }
+       }
     }
-    // Make the decision to turn off or on the LED
-    if (strcmp(json_parsed["light"], "on") == 0) {
-      digitalWrite(pin, HIGH);
-       Serial.println("LED ON");
-    }
-    else {
-      digitalWrite(pin, LOW);
-      Serial.println("led off");
-    }
-  }
-}
-Serial.print("closing connection. ");
+    Serial.print("closing connection..");
 }
