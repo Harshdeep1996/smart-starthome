@@ -85,7 +85,7 @@ void setup() {
       String url = "/smartplug";
       Serial.print("Requesting URL: ");
       Serial.println(url);
-      StaticJsonBuffer<200> jsonBuffer;
+      StaticJsonBuffer<1024> jsonBuffer;
       JsonObject& user_data = jsonBuffer.createObject();
       user_data["_id"] = email->getValue();
       user_data["name"] = plug_name->getValue();
@@ -183,9 +183,22 @@ void loop() {
     delay(500);
     // read response
     String section = "json";
+    
+    unsigned long timeout = millis();
+    while (get_client.available() == 0) {
+      if (millis() - timeout > 10000) {
+        Serial.println(">>> Client Timeout !");
+        get_client.stop();
+        return;
+      }
+    }
+
+    String user_data;
     while(get_client.available()) {
-      String user_data = get_client.readStringUntil('\r');
-        StaticJsonBuffer<200> jsonBuffer;
+        user_data = get_client.readStringUntil('\r');
+    } 
+        Serial.println(user_data);
+        StaticJsonBuffer<1024> jsonBuffer;
         JsonObject& json_parsed = jsonBuffer.parseObject(user_data);
         if (!json_parsed.success())
         {
@@ -194,11 +207,11 @@ void loop() {
         }
         // Make the decision to turn off or on the switch
         int chipId = ESP.getChipId();
-        JsonArray& plugs = user_data["plugs"];
-        int plug_size = user_data["plugs"].size();
+        JsonArray& plugs = json_parsed["plugs"];
+        int plug_size = plugs.size();
         for(int i = 0; i < plug_size; i++) {
           if(chipId == plugs[i]["plug_id"]) {
-            if (strcmp(plugs[i]["status"], "on")) {
+            if (strcmp(plugs[i]["status"], "on") == 0) {
               digitalWrite(pin, HIGH);
               Serial.println("Switch on!");
             }
@@ -208,6 +221,5 @@ void loop() {
             }
           }
        }
-    }
     Serial.print("closing connection..");
 }
